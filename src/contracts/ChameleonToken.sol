@@ -16,7 +16,6 @@ error InsufficientBalance();
 error InsufficientAllowance();
 
 contract ChameleonToken is Context, IERC20, IERC20Metadata {
-
     mapping(address => uint256) private _balances;
 
     mapping(address => mapping(address => uint256)) private _allowances;
@@ -175,7 +174,7 @@ contract ChameleonToken is Context, IERC20, IERC20Metadata {
     function decreaseAllowance(address spender, uint256 subtractedValue) public virtual returns (bool) {
         address owner = _msgSender();
         uint256 currentAllowance = allowance(owner, spender);
-        if (currentAllowance < subtractedValue) { revert InsufficientAllowance();}
+        if (currentAllowance < subtractedValue) revert InsufficientAllowance();
         unchecked {
             _approve(owner, spender, currentAllowance - subtractedValue);
         }
@@ -196,11 +195,11 @@ contract ChameleonToken is Context, IERC20, IERC20Metadata {
      * - `from` must have a balance of at least `amount`.
      */
     function _transfer(address from, address to, uint256 amount) internal virtual {
-        if(to == address(0)) {revert TransferTo0Address();}
-        if(from == address(0)) { revert TransferFrom0Address();}
+        if (to == address(0)) revert TransferTo0Address();
+        if (from == address(0)) revert TransferFrom0Address();
 
         uint256 fromBalance = _balances[from];
-        if(fromBalance < amount) {revert InsufficientBalance();}
+        if (fromBalance < amount) revert InsufficientBalance();
         unchecked {
             _balances[from] = fromBalance - amount;
             // Overflow not possible: the sum of all balances is capped by totalSupply, and the sum is preserved by
@@ -209,9 +208,7 @@ contract ChameleonToken is Context, IERC20, IERC20Metadata {
         }
 
         emit Transfer(from, to, amount);
-
     }
-
 
     /**
      * Sets `amount` as the allowance of `spender` over the `owner` s tokens.
@@ -225,8 +222,8 @@ contract ChameleonToken is Context, IERC20, IERC20Metadata {
      * - `spender` cannot be the zero address.
      */
     function _approve(address owner, address spender, uint256 amount) internal virtual {
-        if(owner == address(0)) {revert ApproveFrom0Address();}
-        if(spender == address(0)) {revert ApproveTo0Address();}
+        if (owner == address(0)) revert ApproveFrom0Address();
+        if (spender == address(0)) revert ApproveTo0Address();
 
         _allowances[owner][spender] = amount;
         emit Approval(owner, spender, amount);
@@ -243,7 +240,7 @@ contract ChameleonToken is Context, IERC20, IERC20Metadata {
     function _spendAllowance(address owner, address spender, uint256 amount) internal virtual {
         uint256 currentAllowance = allowance(owner, spender);
         if (currentAllowance != type(uint256).max) {
-            if(currentAllowance < amount) {revert InsufficientAllowance();}
+            if (currentAllowance < amount) revert InsufficientAllowance();
             unchecked {
                 _approve(owner, spender, currentAllowance - amount);
             }
