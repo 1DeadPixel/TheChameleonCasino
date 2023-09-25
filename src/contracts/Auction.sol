@@ -2,6 +2,7 @@
 
 pragma solidity ^0.8.21;
 
+import {Math} from "../lib/Math.sol";
 import {ERC20} from "../contracts/ERC20.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {SafeERC20} from "../utils/SafeERC20.sol";
@@ -12,6 +13,7 @@ struct Bidder {
     uint256 _pricePerToken;
 }
 
+error NoBid();
 error LowBid();
 error BidExists();
 error InvalidStart();
@@ -20,6 +22,7 @@ error ExceedsMaxPerRound();
 error InsufficientBalance();
 
 contract Auction {
+    using Math for uint256;
     using SafeERC20 for IERC20;
 
     uint256 public constant MINIMUM_PRICE_PER_TOKEN = 1000;
@@ -30,6 +33,7 @@ contract Auction {
 
     uint256 private constant _HOUR = 3600;
 
+    // TODO: Turn this into a struct and create getRoundData.
     uint256 public roundTimestamp;
     uint256 public currentRound = 1;
     Bidder public roundCurrentWinner;
@@ -74,19 +78,31 @@ contract Auction {
     }
 
     /*
+     * Cancels an address bid.
      *
-     *
-     *
+     * Does not trigger a new round.
+     * 
+     * Requirements:
+     * 
+     * -> Address must have a bid.
      *
     */
-    function cancelBid() public pure returns (bool) {
-        // TODO: Comment and finish and remove pure.
+    function cancelBid() public returns (bool) {
+        address sender = msg.sender;
+        Bidder memory bidder = bidders[sender];
+
+        if (bidder._bidderAddress != sender) {
+            revert NoBid();
+        }
+        
+        uint256 bidderAmount = _computePrice(bidder._tokenAmount, bidder._pricePerToken);
+        delete bidders[sender];
+        SafeERC20.safeTransfer(IERC20(USDC_ADDRESS), sender, bidderAmount);
         return true;
     }
 
     function _computePrice(uint256 requestedAmount_, uint256 pricePerToken_) private pure returns (uint256) {
-        // TODO: FIX THIS AND REMOVE PURE.
-        return requestedAmount_ * pricePerToken_ * MINIMUM_PRICE_PER_TOKEN;
+        return requestedAmount_.mulDiv(pricePerToken_, 10**18, Math.Rounding.Up);
     }
 
     function _addBider(address bidder_, uint256 requestedAmount_, uint256 pricePerToken_) private {
@@ -104,9 +120,9 @@ contract Auction {
      * Check bid() function to see the requirements.
     */
     function _validateBid(address bidder_, uint256 requestedAmount_, uint256 pricePerToken_) private view {
-        if (bidders[bidder_]._pricePerToken != 0) revert BidExists();
         if (requestedAmount_ < MINIMUM_TOKEN_AMOUNT) revert LowBid();
         if (pricePerToken_ < MINIMUM_PRICE_PER_TOKEN) revert LowBid();
+        if (bidders[bidder_]._bidderAddress != address(0)) revert BidExists();
         if (requestedAmount_ > MAX_TOKENS_PER_ROUND) revert ExceedsMaxPerRound();
         if (IERC20(CHAMELEON_ADDRESS).balanceOf(address(this)) < requestedAmount_) revert InsufficientBalance();
     }
