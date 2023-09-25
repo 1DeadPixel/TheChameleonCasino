@@ -94,7 +94,7 @@ contract Auction {
         if (bidder._bidderAddress != sender) {
             revert NoBid();
         }
-        
+
         uint256 bidderAmount = _computePrice(bidder._tokenAmount, bidder._pricePerToken);
         delete bidders[sender];
         SafeERC20.safeTransfer(IERC20(USDC_ADDRESS), sender, bidderAmount);
@@ -102,7 +102,7 @@ contract Auction {
     }
 
     function _computePrice(uint256 requestedAmount_, uint256 pricePerToken_) private pure returns (uint256) {
-        return requestedAmount_.mulDiv(pricePerToken_, 10**18, Math.Rounding.Up);
+        return requestedAmount_.mulDiv(pricePerToken_, 10 ** 18, Math.Rounding.Up);
     }
 
     function _addBider(address bidder_, uint256 requestedAmount_, uint256 pricePerToken_) private {
