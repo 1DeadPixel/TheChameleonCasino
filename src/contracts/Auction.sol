@@ -114,7 +114,7 @@ contract Auction {
         address sender = msg.sender;
         Bidder memory bidder = bidders[sender];
 
-        if (bidder._bidderAddress != sender) {
+        if (bidder._bidderAddress == address(0)) {
             revert NoBid();
         }
 
@@ -218,18 +218,20 @@ contract Auction {
 
     // Updates the current highest bidder.
     function _updateRoundCurrentWinner() private {
-        address maxBidder_ = _roundBidders[0];
-        for (uint256 i = 1; i < _roundBidders.length; i++) {
+        address maxBidder_;
+        for (uint256 i = 0; i < _roundBidders.length; i++) {
+            address bidder_ = _roundBidders[i];
             if (
-                bidders[_roundBidders[i]]._pricePerToken >
-                bidders[maxBidder_]._pricePerToken
+                bidders[bidder_]._pricePerToken >
+                getRoundData._roundCurrentWinner._pricePerToken
             ) {
-                maxBidder_ = _roundBidders[i];
+                maxBidder_ = bidder_;
             }
         }
         getRoundData._roundCurrentWinner = bidders[maxBidder_];
     }
 
+    // In case _roundBidders gets too big.
     function cleanRoundBidders() public isOwner {
         uint256 counter = 0;
         address[] memory haveBids;
@@ -243,6 +245,7 @@ contract Auction {
         _roundBidders = haveBids;
     }
 
+    // Withraw all winning bids up to the current round, that haven't been withdrawn yet
     function withdrawWinnerBids() public isOwner returns (bool) {
         uint256 amountToClaim_;
         for (
@@ -254,6 +257,13 @@ contract Auction {
         }
         _claimedBids = getRoundData._currentRound - 1;
         SafeERC20.safeTransfer(IERC20(USDC_ADDRESS), _owner, amountToClaim_);
+        return true;
+    }
+
+    // Withdraws Chameleon Tokens from the vault.
+    function withdrawTokens(uint256 amount) public isOwner returns (bool) {
+        IERC20 chameleonToken = IERC20(CHAMELEON_ADDRESS);
+        SafeERC20.safeTransfer(chameleonToken, _owner, amount);
         return true;
     }
 
