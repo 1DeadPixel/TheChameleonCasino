@@ -146,7 +146,7 @@ contract Auction {
         Bidder memory emptyBidder_;
         roundCurrentWinner = emptyBidder_;
         roundTimestamp = block.timestamp;
-
+        // TODO: Transfer bidder winner balance to casino wallet.
         delete bidders[bidderWinner[currentRound-1]._bidderAddress];
 
         _updateRoundCurrentWinner();
