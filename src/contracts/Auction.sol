@@ -20,10 +20,12 @@ struct Round {
     Bidder _roundCurrentWinner;
 }
 
+
 error NoBid();
 error LowBid();
 error NotOwner();
 error BidExists();
+error AuctionEnded();
 error InvalidStart();
 error BidderIs0Address();
 error ExceedsMaxPerRound();
@@ -33,19 +35,20 @@ contract Auction {
     using Math for uint256;
     using SafeERC20 for IERC20;
 
+    event BidderWinner(uint256 round_, Bidder bidder_);
+    event Bidded(address bidder_, uint256 requestedAmount_, uint256 pricePerToken_);
+
     uint256 public constant MINIMUM_PRICE_PER_TOKEN = 1000;
     uint256 public constant MINIMUM_TOKEN_AMOUNT = 1 * 10 ** 15;
     uint256 public constant MAX_TOKENS_PER_ROUND = 1_000_000 * 10 ** 18;
-    address public constant USDC_ADDRESS =
-        address(0xaf88d065e77c8cC2239327C5EDb3A432268e5831);
-    address public constant CHAMELEON_ADDRESS =
-        address(0x14BC09B277Eea6E14B5EEDD275D404FC07F0C4E4);
+    address public immutable USDC_ADDRESS; // = address(0xaf88d065e77c8cC2239327C5EDb3A432268e5831);
+    address public constant CHAMELEON_ADDRESS = address(0x14BC09B277Eea6E14B5EEDD275D404FC07F0C4E4);
 
     uint256 private _claimedBids;
     address private immutable _owner;
     uint256 private constant _HOUR = 3600;
 
-    // TODO: Turn this into a struct and create getRoundData.
+    bool public ended;
     Round public getRoundData;
 
     // Needed to update roundCurrentWinner when the {currentWinner} gives up before the round ends or a new round beggins.
@@ -53,16 +56,19 @@ contract Auction {
     mapping(uint256 _roundId => Bidder) public bidderWinner;
     mapping(address _bidder => Bidder _bidderData) public bidders;
 
-    constructor() {
+    constructor(address usdc_) {
+        USDC_ADDRESS = usdc_;
         _owner = msg.sender;
         getRoundData._currentRound = 1;
         getRoundData._roundTimestamp = block.timestamp;
     }
 
-    /* Bids in the current round. Triggers a new round if the timestamp is correspondent to the start of another round.
+    /* 
+     * Bids in the current round. Triggers a new round if the timestamp is correspondent to the start of another round.
      *
      * Requirements:
      *
+     * -> Auction must not have ended.
      * -> Bidder cannot have a placed bid. It must cancel it first.
      * -> {requestedAmount} <= {MAX_TOKENS_PER_ROUND}.
      * -> {pricePerToken} >= {MINIMUM_PRICE_PER_TOKEN}
@@ -73,30 +79,20 @@ contract Auction {
      * but only after the current bidder has been taken in consideration, allowing an address to win a round if it bids in a round that has ended but there are no bidders.
      *
      */
-    function bid(
-        uint256 requestedAmount_,
-        uint256 pricePerToken_
-    ) public returns (bool) {
+    function bid(uint256 requestedAmount_, uint256 pricePerToken_) public returns (bool) {
         address bidder_ = msg.sender;
         bool isNewRound_ = _isNewRound(block.timestamp);
 
-        if (
-            isNewRound_ &&
-            getRoundData._roundCurrentWinner._bidderAddress != address(0)
-        ) _triggerNewRound();
+        if (isNewRound_ && getRoundData._roundCurrentWinner._bidderAddress != address(0)) _triggerNewRound();
+
         _validateBid(bidder_, requestedAmount_, pricePerToken_);
-
         uint256 amountToPay_ = _computePrice(requestedAmount_, pricePerToken_);
-
-        SafeERC20.safeTransferFrom(
-            IERC20(USDC_ADDRESS),
-            bidder_,
-            address(this),
-            amountToPay_
-        );
+        SafeERC20.safeTransferFrom(IERC20(USDC_ADDRESS), bidder_, address(this), amountToPay_);
         _addBider(bidder_, requestedAmount_, pricePerToken_, amountToPay_);
+
         if (isNewRound_) _triggerNewRound();
 
+        emit Bidded(bidder_, requestedAmount_, pricePerToken_);
         return true;
     }
 
@@ -131,31 +127,16 @@ contract Auction {
         return true;
     }
 
-    function _computePrice(
-        uint256 requestedAmount_,
-        uint256 pricePerToken_
-    ) private pure returns (uint256) {
-        return
-            requestedAmount_.mulDiv(pricePerToken_, 10 ** 18, Math.Rounding.Up);
+    function _computePrice(uint256 requestedAmount_, uint256 pricePerToken_) private pure returns (uint256) {
+        return requestedAmount_.mulDiv(pricePerToken_, 10 ** 18, Math.Rounding.Up);
     }
 
-    function _addBider(
-        address bidder_,
-        uint256 requestedAmount_,
-        uint256 pricePerToken_,
-        uint256 amountPaid_
-    ) private {
-        Bidder memory newBidder_ = Bidder(
-            bidder_,
-            requestedAmount_,
-            pricePerToken_,
-            amountPaid_
-        );
+    function _addBider(address bidder_, uint256 requestedAmount_, uint256 pricePerToken_, uint256 amountPaid_)
+        private
+    {
+        Bidder memory newBidder_ = Bidder(bidder_, requestedAmount_, pricePerToken_, amountPaid_);
         bidders[bidder_] = newBidder_;
-        if (
-            newBidder_._pricePerToken >
-            getRoundData._roundCurrentWinner._pricePerToken
-        ) {
+        if (newBidder_._pricePerToken > getRoundData._roundCurrentWinner._pricePerToken) {
             getRoundData._roundCurrentWinner = newBidder_;
         }
         _roundBidders.push(bidder_);
@@ -166,25 +147,20 @@ contract Auction {
      *
      * Check bid() function to see the requirements.
      */
-    function _validateBid(
-        address bidder_,
-        uint256 requestedAmount_,
-        uint256 pricePerToken_
-    ) private view {
+    function _validateBid(address bidder_, uint256 requestedAmount_, uint256 pricePerToken_) private view {
+        if (ended) revert AuctionEnded();
         if (requestedAmount_ < MINIMUM_TOKEN_AMOUNT) revert LowBid();
         if (pricePerToken_ < MINIMUM_PRICE_PER_TOKEN) revert LowBid();
         if (bidders[bidder_]._bidderAddress != address(0)) revert BidExists();
-        if (requestedAmount_ > MAX_TOKENS_PER_ROUND)
+        if (requestedAmount_ > MAX_TOKENS_PER_ROUND) {
             revert ExceedsMaxPerRound();
-        if (
-            IERC20(CHAMELEON_ADDRESS).balanceOf(address(this)) <
-            requestedAmount_
-        ) revert InsufficientBalance();
+        }
+        if (IERC20(CHAMELEON_ADDRESS).balanceOf(address(this)) < requestedAmount_) revert InsufficientBalance();
     }
 
     // Checks if it's time for a new round.
     function _isNewRound(uint256 timestamp_) private view returns (bool) {
-        return timestamp_ > getRoundData._roundTimestamp + _HOUR;
+        return timestamp_ > getRoundData._roundTimestamp + _HOUR && !ended;
     }
 
     /*
@@ -195,8 +171,7 @@ contract Auction {
      *
      */
     function _triggerNewRound() private {
-        bidderWinner[getRoundData._currentRound] = getRoundData
-            ._roundCurrentWinner;
+        bidderWinner[getRoundData._currentRound] = getRoundData._roundCurrentWinner;
         // Update structures and variables.
         getRoundData._currentRound += 1;
         Bidder memory emptyBidder_;
@@ -206,14 +181,29 @@ contract Auction {
         delete bidders[
             bidderWinner[getRoundData._currentRound - 1]._bidderAddress
         ];
-
         _updateRoundCurrentWinner();
+    
+        address winner = bidderWinner[getRoundData._currentRound - 1]._bidderAddress;
+        uint256 amountToPay_ = bidderWinner[getRoundData._currentRound - 1]._tokenAmount;
+        uint256 pricePerToken_ = bidderWinner[getRoundData._currentRound - 1]._pricePerToken;
+        _process_winning_transfer(winner, amountToPay_, pricePerToken_);
+        emit BidderWinner(getRoundData._currentRound-1, bidderWinner[getRoundData._currentRound-1]);
+    }
 
-        SafeERC20.safeTransfer(
-            IERC20(CHAMELEON_ADDRESS),
-            bidderWinner[getRoundData._currentRound - 1]._bidderAddress,
-            bidderWinner[getRoundData._currentRound - 1]._tokenAmount
-        );
+    function _process_winning_transfer(address winner_, uint256 amountToPay_, uint256 pricePerToken_) private {
+        IERC20 chameleonToken_ = IERC20(CHAMELEON_ADDRESS);
+        uint256 auctionBalance_ = chameleonToken_.balanceOf(address(this));
+
+        if (amountToPay_ > auctionBalance_) {
+            uint256 toReturn_ = _computePrice(amountToPay_ - auctionBalance_, pricePerToken_);
+            // Update data structure and end auction
+            bidderWinner[getRoundData._currentRound-1]._amountPaid -= toReturn_;
+            ended = true;
+
+            SafeERC20.safeTransfer(chameleonToken_, winner_, auctionBalance_);
+            SafeERC20.safeTransfer(IERC20(USDC_ADDRESS), winner_, toReturn_);
+
+        }
     }
 
     // Updates the current highest bidder.
@@ -221,10 +211,7 @@ contract Auction {
         address maxBidder_;
         for (uint256 i = 0; i < _roundBidders.length; i++) {
             address bidder_ = _roundBidders[i];
-            if (
-                bidders[bidder_]._pricePerToken >
-                getRoundData._roundCurrentWinner._pricePerToken
-            ) {
+            if (bidders[bidder_]._pricePerToken > getRoundData._roundCurrentWinner._pricePerToken) {
                 maxBidder_ = bidder_;
             }
         }
@@ -248,11 +235,7 @@ contract Auction {
     // Withraw all winning bids up to the current round, that haven't been withdrawn yet
     function withdrawWinnerBids() public isOwner returns (bool) {
         uint256 amountToClaim_;
-        for (
-            uint256 i = _claimedBids + 1;
-            i < getRoundData._currentRound;
-            i++
-        ) {
+        for (uint256 i = _claimedBids + 1; i < getRoundData._currentRound; i++) {
             amountToClaim_ += bidderWinner[i]._amountPaid;
         }
         _claimedBids = getRoundData._currentRound - 1;
