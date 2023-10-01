@@ -26,14 +26,13 @@ contract AuctionTest is Test {
    * Bid > 
    *
    *       
-   *       7 -> Test 2 valid bid inside the round and assert that the correct address is the roundwinner.
    *       8 -> Test a valid bid outside the round and assert that the bidder is the winner, that he received the tokens and that the data structures are updated correctly.
    *       9 -> Test 2 valid bids one outside and one inside the round, and assert that the previous bidder is the winner, that the new one is the current winner, and that the tokens have been sent and data structures are updated correctly.
    *      10 -> Test a cancel bid and assert that the user no longer is the current winner.
-   *      11 -> Test 2 bids and assert that after the current winner gives up, the other bidder is the roundWinner.
+   *      11 -> Test 2 bids inside the round and assert that after the current winner gives up, the other bidder is the roundWinner.
    *      12 -> Test a cancel bid and test cleanRoundBidders.
-   *      13 -> Test that we can successfully withdraw winnings.
-   *      14 -> Test that we can successfully withdraw tokens.
+   *      13 -> Test that the contract can successfully withdraw winnings.
+   *      14 -> Test that the contract can successfully withdraw tokens.
    *      15 -> Test a complex scenario involving all of the previous tests and an auction ending.
    *
    *
@@ -108,7 +107,28 @@ contract AuctionTest is Test {
       address[] memory roundBidders_ = auction.getRoundBidders();
       assertEq(roundBidders_[0], TEST1); // check private var being updated
    }
+
    // 7 -> Test a bid when the user has a bid.
+   function testInvalidBidUserHasBid() public {
+      vm.startPrank(TEST1);
+      auction.bid(1*10**15, 1000);
+      vm.expectRevert();
+      auction.bid(1*10**15, 1000);
+      vm.stopPrank();
+   }
+
+   //8 -> Test 2 valid bid inside the round and assert that the correct address is the roundwinner.
+   function testCurrentWinnerUpdating() public {
+      vm.prank(TEST1);
+      auction.bid(1 * 10 ** 15, 1000);
+      vm.prank(TEST2);
+      auction.bid(1 * 10 ** 15, 1001);
+      (,, Bidder memory bidder) = auction.getRoundData();
+      assertEq(bidder._bidderAddress, TEST2);
+      assertEq(auction.getRoundBidders()[1], TEST2);
+   }
+
+
 
    // Helpers
    function _allow(address bidder_, uint256 amount) private returns (bool) {
