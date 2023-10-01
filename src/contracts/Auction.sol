@@ -20,7 +20,6 @@ struct Round {
     Bidder _roundCurrentWinner;
 }
 
-
 error NoBid();
 error LowBid();
 error NotOwner();
@@ -42,7 +41,7 @@ contract Auction {
     uint256 public constant MINIMUM_TOKEN_AMOUNT = 1 * 10 ** 15;
     uint256 public constant MAX_TOKENS_PER_ROUND = 1_000_000 * 10 ** 18;
     address public immutable USDC_ADDRESS; // = address(0xaf88d065e77c8cC2239327C5EDb3A432268e5831);
-    address public constant CHAMELEON_ADDRESS = address(0x14BC09B277Eea6E14B5EEDD275D404FC07F0C4E4);
+    address public immutable CHAMELEON_ADDRESS; // = address(0x14BC09B277Eea6E14B5EEDD275D404FC07F0C4E4);
 
     uint256 private _claimedBids;
     address private immutable _owner;
@@ -56,8 +55,9 @@ contract Auction {
     mapping(uint256 _roundId => Bidder) public bidderWinner;
     mapping(address _bidder => Bidder _bidderData) public bidders;
 
-    constructor(address usdc_) {
+    constructor(address usdc_, address chameleon_) {
         USDC_ADDRESS = usdc_;
+        CHAMELEON_ADDRESS = chameleon_;
         _owner = msg.sender;
         getRoundData._currentRound = 1;
         getRoundData._roundTimestamp = block.timestamp;
@@ -182,27 +182,26 @@ contract Auction {
             bidderWinner[getRoundData._currentRound - 1]._bidderAddress
         ];
         _updateRoundCurrentWinner();
-    
+
         address winner = bidderWinner[getRoundData._currentRound - 1]._bidderAddress;
         uint256 amountToPay_ = bidderWinner[getRoundData._currentRound - 1]._tokenAmount;
         uint256 pricePerToken_ = bidderWinner[getRoundData._currentRound - 1]._pricePerToken;
-        _process_winning_transfer(winner, amountToPay_, pricePerToken_);
-        emit BidderWinner(getRoundData._currentRound-1, bidderWinner[getRoundData._currentRound-1]);
+        _processWinningTransfer(winner, amountToPay_, pricePerToken_);
+        emit BidderWinner(getRoundData._currentRound - 1, bidderWinner[getRoundData._currentRound - 1]);
     }
 
-    function _process_winning_transfer(address winner_, uint256 amountToPay_, uint256 pricePerToken_) private {
+    function _processWinningTransfer(address winner_, uint256 amountToPay_, uint256 pricePerToken_) private {
         IERC20 chameleonToken_ = IERC20(CHAMELEON_ADDRESS);
         uint256 auctionBalance_ = chameleonToken_.balanceOf(address(this));
 
         if (amountToPay_ > auctionBalance_) {
             uint256 toReturn_ = _computePrice(amountToPay_ - auctionBalance_, pricePerToken_);
             // Update data structure and end auction
-            bidderWinner[getRoundData._currentRound-1]._amountPaid -= toReturn_;
+            bidderWinner[getRoundData._currentRound - 1]._amountPaid -= toReturn_;
             ended = true;
 
             SafeERC20.safeTransfer(chameleonToken_, winner_, auctionBalance_);
             SafeERC20.safeTransfer(IERC20(USDC_ADDRESS), winner_, toReturn_);
-
         }
     }
 
@@ -255,5 +254,10 @@ contract Auction {
             revert NotOwner();
         }
         _;
+    }
+
+    // FOR TESTING ONLY. REMOVE BEFORE DEPLOYMENT
+    function getRoundBidders() public view returns (address[] memory) {
+        return _roundBidders;
     }
 }
