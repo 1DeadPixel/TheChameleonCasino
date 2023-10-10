@@ -52,8 +52,8 @@ contract Auction {
 
     // Needed to update roundCurrentWinner when the {currentWinner} gives up before the round ends or a new round beggins.
     address[] private _roundBidders;
-    mapping(uint256 _roundId => Bidder) public bidderWinner;
     mapping(address _bidder => Bidder _bidderData) public bidders;
+    mapping(uint256 _roundId => Bidder _bidderWinner) public bidderWinner;
 
     constructor(address usdc_, address chameleon_) {
         USDC_ADDRESS = usdc_;
@@ -81,7 +81,7 @@ contract Auction {
      */
     function bid(uint256 requestedAmount_, uint256 pricePerToken_) public returns (bool) {
         address bidder_ = msg.sender;
-        bool isNewRound_ = _isNewRound(block.timestamp);
+        bool isNewRound_ = _isNewRound();
 
         if (isNewRound_ && getRoundData._roundCurrentWinner._bidderAddress != address(0)) _triggerNewRound();
 
@@ -159,8 +159,8 @@ contract Auction {
     }
 
     // Checks if it's time for a new round.
-    function _isNewRound(uint256 timestamp_) private view returns (bool) {
-        return timestamp_ > getRoundData._roundTimestamp + _HOUR && !ended;
+    function _isNewRound() private view returns (bool) {
+        return block.timestamp > getRoundData._roundTimestamp + _HOUR && !ended;
     }
 
     /*
@@ -173,7 +173,7 @@ contract Auction {
     function _triggerNewRound() private {
         bidderWinner[getRoundData._currentRound] = getRoundData._roundCurrentWinner;
         // Update structures and variables.
-        getRoundData._currentRound += 1;
+        ++getRoundData._currentRound;
         Bidder memory emptyBidder_;
         getRoundData._roundCurrentWinner = emptyBidder_;
         getRoundData._roundTimestamp = block.timestamp;
@@ -203,15 +203,22 @@ contract Auction {
             SafeERC20.safeTransfer(chameleonToken_, winner_, auctionBalance_);
             SafeERC20.safeTransfer(IERC20(USDC_ADDRESS), winner_, toReturn_);
         }
+        else {
+            SafeERC20.safeTransfer(chameleonToken_, winner_, amountToPay_);
+        }
     }
 
     // Updates the current highest bidder.
     function _updateRoundCurrentWinner() private {
         address maxBidder_;
-        for (uint256 i = 0; i < _roundBidders.length; i++) {
+        uint256 _roundBiddersLength = _roundBidders.length;
+        for (uint256 i; i < _roundBiddersLength;) {
             address bidder_ = _roundBidders[i];
             if (bidders[bidder_]._pricePerToken > getRoundData._roundCurrentWinner._pricePerToken) {
                 maxBidder_ = bidder_;
+            }
+            unchecked {
+                ++i;
             }
         }
         getRoundData._roundCurrentWinner = bidders[maxBidder_];
@@ -219,13 +226,19 @@ contract Auction {
 
     // In case _roundBidders gets too big.
     function cleanRoundBidders() public isOwner {
-        uint256 counter = 0;
+        uint256 counter;
         address[] memory haveBids;
-        for (uint256 i = 0; i < _roundBidders.length; i++) {
+        uint256 _biddersLength = _roundBidders.length;
+        for (uint256 i; i < _biddersLength;) {
             address bidderAddress_ = _roundBidders[i];
             if (bidders[bidderAddress_]._bidderAddress != address(0)) {
                 haveBids[counter] = bidderAddress_;
-                counter++;
+                unchecked {
+                    ++counter;
+                }
+            }
+            unchecked {
+                ++i;
             }
         }
         _roundBidders = haveBids;
@@ -234,8 +247,12 @@ contract Auction {
     // Withraw all winning bids up to the current round, that haven't been withdrawn yet
     function withdrawWinnerBids() public isOwner returns (bool) {
         uint256 amountToClaim_;
-        for (uint256 i = _claimedBids + 1; i < getRoundData._currentRound; i++) {
+        uint256 _numberRounds = getRoundData._currentRound;
+        for (uint256 i = _claimedBids + 1; i < _numberRounds;) {
             amountToClaim_ += bidderWinner[i]._amountPaid;
+            unchecked {
+                ++i;
+            }
         }
         _claimedBids = getRoundData._currentRound - 1;
         SafeERC20.safeTransfer(IERC20(USDC_ADDRESS), _owner, amountToClaim_);
@@ -259,5 +276,9 @@ contract Auction {
     // FOR TESTING ONLY. REMOVE BEFORE DEPLOYMENT
     function getRoundBidders() public view returns (address[] memory) {
         return _roundBidders;
+    }
+
+    function getClaimedBids() public view returns (uint256) {
+        return _claimedBids;
     }
 }
