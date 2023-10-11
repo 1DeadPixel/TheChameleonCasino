@@ -162,7 +162,7 @@ contract AuctionTest is Test {
       assert(chameleonToken.balanceOf(TEST1) == 1 * 10 ** 15);
       (uint256 timestamp, uint256 roundId, Bidder memory bidder) = auction.getRoundData();
       // TODO FIX THIS
-      // assert(roundId == 2);
+      assert(roundId == 2);
       assert(timestamp == block.timestamp);
       assert(bidder._bidderAddress == TEST2);
       (address bidderAddress_, uint256 tokenAmount_, uint256 pricePerToken_, uint256 amountPaid_) =
