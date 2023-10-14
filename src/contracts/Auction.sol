@@ -40,8 +40,8 @@ contract Auction {
     uint256 public constant MINIMUM_PRICE_PER_TOKEN = 1000;
     uint256 public constant MINIMUM_TOKEN_AMOUNT = 1 * 10 ** 15;
     uint256 public constant MAX_TOKENS_PER_ROUND = 1_000_000 * 10 ** 18;
-    address public immutable USDC_ADDRESS; // = address(0xaf88d065e77c8cC2239327C5EDb3A432268e5831);
-    address public immutable CHAMELEON_ADDRESS; // = address(0x14BC09B277Eea6E14B5EEDD275D404FC07F0C4E4);
+    address public immutable USDC_ADDRESS = address(0xaf88d065e77c8cC2239327C5EDb3A432268e5831);
+    address public immutable CHAMELEON_ADDRESS = address(0x14BC09B277Eea6E14B5EEDD275D404FC07F0C4E4);
 
     uint256 private _claimedBids;
     address private immutable _owner;
@@ -55,9 +55,7 @@ contract Auction {
     mapping(address _bidder => Bidder _bidderData) public bidders;
     mapping(uint256 _roundId => Bidder _bidderWinner) public bidderWinner;
 
-    constructor(address usdc_, address chameleon_) {
-        USDC_ADDRESS = usdc_;
-        CHAMELEON_ADDRESS = chameleon_;
+    constructor() {
         _owner = msg.sender;
         getRoundData._currentRound = 1;
         getRoundData._roundTimestamp = block.timestamp;
@@ -79,18 +77,17 @@ contract Auction {
      * but only after the current bidder has been taken in consideration, allowing an address to win a round if it bids in a round that has ended but there are no bidders.
      *
      */
-    function bid(uint256 requestedAmount_, uint256 pricePerToken_) public returns (bool) {
+    function bid(uint256 requestedAmount_, uint256 pricePerToken_) external returns (bool) {
         address bidder_ = msg.sender;
-        bool isNewRound_ = _isNewRound();
-
-        if (isNewRound_ && getRoundData._roundCurrentWinner._bidderAddress != address(0)) _triggerNewRound();
-
         _validateBid(bidder_, requestedAmount_, pricePerToken_);
+
+        if (_isNewRound() && getRoundData._roundCurrentWinner._bidderAddress != address(0)) _triggerNewRound();
+
         uint256 amountToPay_ = _computePrice(requestedAmount_, pricePerToken_);
         SafeERC20.safeTransferFrom(IERC20(USDC_ADDRESS), bidder_, address(this), amountToPay_);
         _addBider(bidder_, requestedAmount_, pricePerToken_, amountToPay_);
 
-        if (isNewRound_) _triggerNewRound();
+        if (_isNewRound()) _triggerNewRound();
 
         emit Bidded(bidder_, requestedAmount_, pricePerToken_);
         return true;
@@ -106,7 +103,7 @@ contract Auction {
      * -> Address must have a bid.
      *
      */
-    function cancelBid() public returns (bool) {
+    function cancelBid() external returns (bool) {
         address sender = msg.sender;
         Bidder memory bidder = bidders[sender];
 
@@ -120,6 +117,8 @@ contract Auction {
 
         // Check if bidder was the winner and update the winner if it was.
         if (getRoundData._roundCurrentWinner._bidderAddress == sender) {
+            Bidder memory emptyBidder;
+            getRoundData._roundCurrentWinner = emptyBidder;
             _updateRoundCurrentWinner();
         }
 
@@ -202,8 +201,7 @@ contract Auction {
 
             SafeERC20.safeTransfer(chameleonToken_, winner_, auctionBalance_);
             SafeERC20.safeTransfer(IERC20(USDC_ADDRESS), winner_, toReturn_);
-        }
-        else {
+        } else {
             SafeERC20.safeTransfer(chameleonToken_, winner_, amountToPay_);
         }
     }
@@ -225,7 +223,7 @@ contract Auction {
     }
 
     // In case _roundBidders gets too big.
-    function cleanRoundBidders() public isOwner {
+    function cleanRoundBidders() external isOwner {
         uint256 counter;
         address[] memory haveBids;
         uint256 _biddersLength = _roundBidders.length;
@@ -245,7 +243,7 @@ contract Auction {
     }
 
     // Withraw all winning bids up to the current round, that haven't been withdrawn yet
-    function withdrawWinnerBids() public isOwner returns (bool) {
+    function withdrawWinnerBids() external isOwner returns (bool) {
         uint256 amountToClaim_;
         uint256 _numberRounds = getRoundData._currentRound;
         for (uint256 i = _claimedBids + 1; i < _numberRounds;) {
@@ -260,7 +258,7 @@ contract Auction {
     }
 
     // Withdraws Chameleon Tokens from the vault.
-    function withdrawTokens(uint256 amount) public isOwner returns (bool) {
+    function withdrawTokens(uint256 amount) external isOwner returns (bool) {
         IERC20 chameleonToken = IERC20(CHAMELEON_ADDRESS);
         SafeERC20.safeTransfer(chameleonToken, _owner, amount);
         return true;
@@ -271,14 +269,5 @@ contract Auction {
             revert NotOwner();
         }
         _;
-    }
-
-    // FOR TESTING ONLY. REMOVE BEFORE DEPLOYMENT
-    function getRoundBidders() public view returns (address[] memory) {
-        return _roundBidders;
-    }
-
-    function getClaimedBids() public view returns (uint256) {
-        return _claimedBids;
     }
 }
